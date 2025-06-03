@@ -41,6 +41,17 @@ The route server is selected at random at runtime. The **-h** option lists the h
 The options may be used in any combination, all, or none. Unfortunately, none of the 
 “other” RIRs note the actual CIDR notation of the range, so `ipcalc` is used to perform 
 this function. If it is not installed on your system, the script will install it for you.
+ 
+### Non-interactive mode
+You can bypass the interactive prompts by providing the following flags when running the script:
+
+```bash
+-n client_name          # Client Name
+-d email_domain         # Email primary domain (e.g., example.com)
+-c cc_used              # Use country codes in email addresses? (Y or N)
+-C cc_position          # Country code position: B (before domain) or A (after TLD)
+-y                      # Automatically overwrite existing output directory
+```
 
 At the prompts, enter the organization name, the email domain, and whether country codes 
 are used as part of the email. If answered **Y** to country codes, you will be prompted as 

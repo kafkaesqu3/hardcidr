@@ -51,6 +51,7 @@ GRN='\x1B[1;32m'
 WHT='\x1B[1;37m'
 RED='\x1B[1;31m'
 NC='\x1B[0m'
+# Directory and file settings
 scriptdir=$(readlink -f $0 | rev | cut -d'/' -f2- | rev | xargs -I "%" echo %/)
 ccfilename='country-codes.txt'
 sname=$(basename "$0")
@@ -60,52 +61,56 @@ lf=$'\n'
 tab=$'\t'
 currentwd=$(pwd)
 
+# Default non-interactive flags
+forceoverwrite=0
+
 # Script help
 f_help()
 {
 cat << script_help
 
-usage: ./${sname} -r -l -f -p -h -u
+usage: ./${sname} [-r] [-l] [-f] [-p] [-u] [-n client_name] [-d email_domain] [-c cc_used] [-C cc_position] [-y] [-h]
 -r = Query [R]IPE NCC (Europe/Middle East/Central Asia)
 -l = Query [L]ACNIC   (Latin America & Caribbean)
 -f = Query A[f]riNIC  (Africa)
 -p = Query A[P]NIC    (Asia/Pacific)
--u = Update LACNIC data file <- dont run with other options
+-u = Update LACNIC data file (do not combine with other options)
+-n = Client Name
+-d = Client Email Primary Domain (domain.tld)
+-c = Use country codes in email addresses? (Y or N)
+-C = Country code position: B for before domain name or A for after TLD
+-y = Automatically overwrite existing output directory if it exists
 -h = help
 
 script_help
 }
 
 # Script options
-while getopts ":r l f p u h" opt; do
-     case $opt in
-          r)
-               ripeopt=1
-               ;;
-          l)
-               lacnicopt=1
-               ;;
-          f)
-               afrinicopt=1
-               ;;
-          p)
-               apnicopt=1
-               ;;
-          u)   
-               update=1
-               ;;
-          h)
-               f_help
-               exit 1
-               ;;
-          \?)
-               echo
-               echo "Invalid option: -$OPTARG" >&2
-               f_help
-               exit 1
-               ;;
-     esac
+while getopts ":rlfpuhn:d:c:C:y" opt; do
+    case $opt in
+        r)  ripeopt=1;;
+        l)  lacnicopt=1;;
+        f)  afrinicopt=1;;
+        p)  apnicopt=1;;
+        u)  update=1;;
+        h)  f_help; exit 1;;
+        n)  orginput="$OPTARG";;
+        d)  emaildomain="$OPTARG";;
+        c)  ccused="$OPTARG";;
+        C)  ccpos="$OPTARG";;
+        y)  forceoverwrite=1;;
+        :)  echo; echo "Option -$OPTARG requires an argument." >&2; f_help; exit 1;;
+        \?) echo; echo "Invalid option: -$OPTARG" >&2; f_help; exit 1;;
+    esac
 done
+
+# Shift parsed options and assign non-interactive parameters
+shift $((OPTIND-1))
+# Preserve values from flags, or fall back to positional arguments if not set
+orginput=${orginput:-$1}
+emaildomain=${emaildomain:-$2}
+ccused=${ccused:-$3}
+ccpos=${ccpos:-$4}
 
 # Option combo check
 if ([[ $ripeopt -eq 1  ]] || [[ $lacnicopt -eq 1 ]] || [[ $afrinicopt -eq 1 ]] || [[ $apnicopt -eq 1 ]]) && [[ $update -eq 1 ]]; then
@@ -252,81 +257,96 @@ if [[ $lacnicopt -eq 1 ]]; then
      fi
 fi
 
-# Get client name
-echo
-echo -e -n "Enter Client Name: "
-read -e orginput
+# Prompt for client name if not provided via -n
+if [[ -z "$orginput" ]]; then
+    echo
+    echo -e -n "Enter Client Name: "
+    read -e orginput
 
-while [[ $orginput == "" ]]; do
-     echo
-     echo -e -n "Client name is ${RED}empty${NC}, please try again: "
-     read -e orginput
-done
+    while [[ -z "$orginput" ]]; do
+        echo
+        echo -e -n "Client name is ${RED}empty${NC}, please try again: "
+        read -e orginput
+    done
+fi
 
-# Get client email domain
-echo
-echo -e -n "Enter Client Email Primary Domain (domain.tld): "
-read -e emaildomain
+# Prompt for email domain if not provided via -d
+if [[ -z "$emaildomain" ]]; then
+    echo
+    echo -e -n "Enter Client Email Primary Domain (domain.tld): "
+    read -e emaildomain
 
-while ! [[ $emaildomain =~ ^[a-zA-Z0-9]+(-[a-zA-Z0-9]+)*\.[a-zA-Z]{2,5}$ ]]; do
-     echo
-     echo -e "${RED}$emaildomain${NC} Is Not Valid Domain Format" >&2
-     echo -e -n "Ex: example.com or one-example.com, Try Again: "
-     read -e emaildomain
-done
+    while ! [[ $emaildomain =~ ^[a-zA-Z0-9]+(-[a-zA-Z0-9]+)*\.[a-zA-Z]{2,5}$ ]]; do
+        echo
+        echo -e "${RED}$emaildomain${NC} Is Not Valid Domain Format" >&2
+        echo -e -n "Ex: example.com or one-example.com, Try Again: "
+        read -e emaildomain
+    done
+fi
 
-# Check if country codes are used in email address
-echo
-echo -e -n "Does ${WHT}$orginput${NC} use country codes in email addresses? ${WHT}Y${NC} or ${WHT}N${NC}: "
-read -e ccused
+# Prompt for country code usage if not provided via -c
+if [[ -z "$ccused" ]]; then
+    echo
+    echo -e -n "Does ${WHT}$orginput${NC} use country codes in email addresses? ${WHT}Y${NC} or ${WHT}N${NC}: "
+    read -e ccused
 
-while [[ $ccused != "Y" ]] && [[ $ccused != "N" ]]; do
-     echo
-     echo -e -n "Please enter ${WHT}Y${NC} or ${WHT}N${NC}: "
-     read -e ccused
-done
+    while [[ $ccused != "Y" ]] && [[ $ccused != "N" ]]; do
+        echo
+        echo -e -n "Please enter ${WHT}Y${NC} or ${WHT}N${NC}: "
+        read -e ccused
+    done
+fi
 
 # Check country code position in email address
+# Prompt for country code position if needed, with flag -C
 if [[ $ccused == "Y" ]]; then
-     echo
-     echo -e -n "Are country codes before (B) domain name or after (A) TLD? ${WHT}B${NC} or ${WHT}A${NC}: "
-     read -e ccpos
+    if [[ -z "$ccpos" ]]; then
+        echo
+        echo -e -n "Are country codes before (B) domain name or after (A) TLD? ${WHT}B${NC} or ${WHT}A${NC}: "
+        read -e ccpos
 
-     while [[ $ccpos != "B" ]] && [[ $ccpos != "A" ]]; do
-          echo
-          echo -e -n "Please enter ${WHT}B${NC} or ${WHT}A${NC}: "
-          read -e ccpos
-     done
+        while [[ $ccpos != "B" ]] && [[ $ccpos != "A" ]]; do
+            echo
+            echo -e -n "Please enter ${WHT}B${NC} or ${WHT}A${NC}: "
+            read -e ccpos
+        done
+    fi
 fi
 
 # Create & check if output dir exists
 emdomain=$(echo $emaildomain | cut -d'.' -f1)
 outdir="/tmp/${emdomain}"
 if [ -d $outdir ]; then
-     echo
-     echo -e -n "${RED}${outdir}/${NC} directory already exists, overwrite contents? ${WHT}Y${NC} or ${WHT}N${NC}: "
-     read -e overwrite
- 
-     while [[ $overwrite != "Y" ]] && [[ $overwrite != "N" ]]; do
-          echo
-          echo -e -n "Please enter ${WHT}Y${NC} or ${WHT}N${NC}: "
-          read -e overwrite
-     done
-     if [[ $overwrite == "Y" ]]; then
-          cd $outdir
-          rm * 2>/dev/null
-          arindir=$outdir
-     else
-          TIME=$(date +"%H%M%S")
-          newdir="${outdir}-${TIME}"
-          mkdir $newdir
-          cd $newdir
-          arindir=$newdir
-     fi
+    if [[ "$forceoverwrite" -eq 1 ]]; then
+        overwrite="Y"
+    fi
+
+    if [[ -z "$overwrite" ]]; then
+        echo
+        echo -e -n "${RED}${outdir}/${NC} directory already exists, overwrite contents? ${WHT}Y${NC} or ${WHT}N${NC}: "
+        read -e overwrite
+
+        while [[ $overwrite != "Y" ]] && [[ $overwrite != "N" ]]; do
+            echo
+            echo -e -n "Please enter ${WHT}Y${NC} or ${WHT}N${NC}: "
+            read -e overwrite
+        done
+    fi
+    if [[ $overwrite == "Y" ]]; then
+        cd $outdir
+        rm * 2>/dev/null
+        arindir=$outdir
+    else
+        TIME=$(date +"%H%M%S")
+        newdir="${outdir}-${TIME}"
+        mkdir $newdir
+        cd $newdir
+        arindir=$newdir
+    fi
 else
-     mkdir $outdir
-     arindir=$outdir
-     cd $outdir
+    mkdir $outdir
+    arindir=$outdir
+    cd $outdir
 fi
 
 # Check for names containing '&' or 'and' to search for both instances
